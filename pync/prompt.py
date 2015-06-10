@@ -14,6 +14,9 @@ class Prompt(Cmd):
 
         self.prompt = "{}> ".format(os.path.basename(self.root.path.rstrip("/")))
 
+        import readline
+        readline.set_completer_delims(" \t")
+
         init()
         Cmd.__init__(self)
 
@@ -21,24 +24,22 @@ class Prompt(Cmd):
         print("{}ERROR:{} {}".format(Fore.RED, Fore.RESET, error))
 
     def do_tree(self, params):
-        if len(params.split()) != 0:
-            tgt = self.current.find(params)
-            if tgt:
-                tgt.trace(override=True)
-            else:
-                self.perror("no such file or direcory: '{}'".format(params))
+        tgt = self.current.find(params)
+        if tgt:
+            tgt.trace(override=True)
         else:
-            self.current.trace(override=True)
+            self.perror("no such file or direcory: '{}'".format(params))
 
     def complete_tree(self, text, line, begidx, endidx):
-        if not text or len(text.split()) == 0:
-            print([child.name + child.ppostfix() for child in self.current if hasattr(chil, "children")] + [".."])
-            return [child.name + child.ppostfix() for child in self.current if hasattr(chil, "children")] + [".."]
+        if self.current != self.root and not text or len(text.split()) == 0:
+            return [child.name + "/" for child in self.current if hasattr(child, "children")] + ["../"]
+        elif not os.path.dirname(text):
+            return [child.name + "/" for child in self.current if child.name.startswith(text) and hasattr(child, "children")]
 
         l = self.current.find(os.path.dirname(text))
 
         if hasattr(l, "children"):
-            return [child.name for child in l if child.name.startswith(os.path.basename(text)) and hasattr(child, "children")]
+            return ["{}/{}/".format(os.path.dirname(text), child.name) for child in l if child.name.startswith(os.path.basename(text)) and hasattr(child, "children")]
 
     def do_cd(self, params):
         if len(params.split()) == 0:
@@ -54,12 +55,15 @@ class Prompt(Cmd):
                 self.perror("no such file or directory: '{}'".format(params))
 
     def complete_cd(self, text, line, begidx, endidx):
-        if not text:
-            return [child.name + child.ppostfix() for child in self.current if hasattr(child, "children")] + [".."]
+        if self.current != self.root and not text or len(text.split()) == 0:
+            return [child.name + "/" for child in self.current if hasattr(child, "children")] + ["../"]
+        elif not os.path.dirname(text):
+            return [child.name + "/" for child in self.current if child.name.startswith(text) and hasattr(child, "children")]
+
         l = self.current.find(os.path.dirname(text))
 
         if hasattr(l, "children"):
-            return [child.name for child in l if child.name.startswith(os.path.basename(text)) and hasattr(child, "children")]
+            return ["{}/{}/".format(os.path.dirname(text), child.name) for child in l if child.name.startswith(os.path.basename(text)) and hasattr(child, "children")]
 
     def do_exit(self, params):
         return True

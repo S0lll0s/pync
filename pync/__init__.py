@@ -31,6 +31,8 @@ class Filetree(object):
         return sum(child.size() for child in self)
 
     def find(self, path):
+        while path.endswith("/"):
+            path = path[:-1]
         if path == "":
             return self
 
@@ -41,10 +43,10 @@ class Filetree(object):
                 if child.name == path:
                     return child
                 elif child.match(path):
-                    return child.find(path[len(self.name)+1:])
+                    return child.find(path[len(child.name)+1:])
 
     def match(self, path):
-        return os.path.commonprefix([self.path + "/", path]) == self.path + "/"
+        return path.startswith(self.name + "/")
 
     def ppfix(self):
         if hasattr(self, "children"):
