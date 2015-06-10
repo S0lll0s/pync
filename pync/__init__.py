@@ -1,6 +1,7 @@
 # vim: et:ts=4:sw=4
 
 import os
+from colorama import Fore
 try:
     from os import scandir
 except ImportError:
@@ -12,7 +13,7 @@ class Filetree(object):
     S_SEMI  = 1 # no children none, some children some
     S_NONE  = 0
 
-    states = {0: "none", 1: "semi", 2: "some", 3: "all "}
+    states = {0: Fore.RED + "none", 1: Fore.MAGENTA + "semi", 2: Fore.YELLOW + "some", 3: Fore.GREEN + "all "}
 
     def __init__(self, path):
         self.path       = path
@@ -27,10 +28,31 @@ class Filetree(object):
         self.children[child.name]   = child
 
     def size(self):
-        return sum(child.size() for name, child in self)
+        return sum(child.size() for child in self)
+
+    def find(self, path):
+        if path == "":
+            return self
+
+        if hasattr(self, "children"):
+            if path.startswith("..") and hasattr(self, "parent"):
+                return self.parent.find(path[3:])
+            for child in self:
+                if child.name == path:
+                    return child
+                elif child.match(path):
+                    return child.find(path[len(self.name)+1:])
+
+    def match(self, path):
+        return os.path.commonprefix([self.path + "/", path]) == self.path + "/"
+
+    def ppfix(self):
+        if hasattr(self, "children"):
+            return "/"
+        return ""
 
     def compare_to(self, other):
-        stats = [child.compare_to(other[name]) for name, child in self]
+        stats = [child.compare_to(other[child.name]) for child in self]
         if   all(s and s == self.S_ALL for s in stats):
             self.status = self.S_ALL
         elif all(s and s > self.S_SEMI for s in stats):
@@ -41,10 +63,11 @@ class Filetree(object):
             self.status = self.S_NONE
         return self.status
 
-    def trace(self, stop=()):
-        print("{} - REPO -\t({}B)".format(self.states[self.status], self.size()))
-        for name, child in self:
+    def trace(self, stop=(3, 0), override=False):
+        print("{} {:<50}       {:20}B".format(self.states[self.status], "- REPO -", self.size()))
+        for child in self:
             child.trace(stop=stop)
+        print(Fore.RESET, end="")
 
     def __getitem__(self, name):
         try:
@@ -54,7 +77,7 @@ class Filetree(object):
 
     def __iter__(self):
         for child in self.children:
-            yield child, self.children[child]
+            yield self.children[child]
 
 class Filenode(Filetree):
     def __init__(self, entry, parent):
@@ -70,7 +93,7 @@ class Filenode(Filetree):
 
     def size(self):
         if self.entry.is_dir():
-            return sum(child.size() for name, child in self)
+            return sum(child.size() for child in self)
         return os.path.getsize(self.path)
 
     def compare_to(self, other):
@@ -78,12 +101,12 @@ class Filenode(Filetree):
 
         if not other:
             if self.entry.is_dir():
-                for name, child in self:
+                for child in self:
                     child.compare_to(None) # make sure everyone gets assigned a value
             return
 
         if self.entry.is_dir():
-            stats = [child.compare_to(other[name]) for name, child in self]
+            stats = [child.compare_to(other[child.name]) for child in self]
             if   all(s and s == self.S_ALL for s in stats):
                 self.status = self.S_ALL
             elif all(s and s > self.S_SEMI for s in stats):
@@ -95,13 +118,14 @@ class Filenode(Filetree):
                 self.status = self.S_ALL
         return self.status
 
-    def trace(self, indent=0, stop=()):
+    def trace(self, indent=0, stop=(3, 0), override=False):
         if self.entry.is_dir():
-            if self.status in stop:
-                print("{} {}{}: ... <skip>\t({}B)".format(self.states[self.status], "  "*indent, self.name, self.size()))
+            if self.status in stop and not override:
+                print("{} {:<50} <skip>{:20}B".format(self.states[self.status], "  "*indent + self.name, self.size()))
             else:
-                print("{} {}{}:\t({}B)".format(self.states[self.status], "  "*indent, self.name, self.size()))
-                for name, child in self:
+                print("{} {:<50}       {:20}B".format(self.states[self.status], "  "*indent + self.name, self.size()))
+                for child in self:
                     child.trace(indent + 1, stop=stop)
         else:
-            print("{} {}{}\t({}B)".format(self.states[self.status], "  "*indent, self.name, self.size()))
+            print("{} {:<50}       {:20}B".format(self.states[self.status], "  "*indent + self.name, self.size()))
+        print(Fore.RESET, end="")
