@@ -1,7 +1,8 @@
 # vim: et:ts=4:sw=4
 
 import os
-from colorama import Fore
+import shutil
+from colorama import Fore, Style
 try:
     from os import scandir
 except ImportError:
@@ -65,6 +66,20 @@ class Filetree(object):
             self.status = self.S_NONE
         return self.status
 
+    def new_status(self):
+        if hasattr(self, "children"):
+            stats = [child.new_status() for child in self]
+            if   all(s and s == self.S_ALL for s in stats):
+                return self.S_ALL
+            elif all(s and s > self.S_SEMI for s in stats):
+                return self.S_SEMI
+            elif any(s and s > self.S_NONE for s in stats):
+                return self.S_SOME
+            else:
+                return self.S_NONE
+        else:
+            return self._new_status
+
     def trace(self, stop=(3, 0), override=False):
         print("{} {:<50}       {:20}B".format(self.states[self.status], "- REPO -", self.size()))
         for child in self:
@@ -80,6 +95,56 @@ class Filetree(object):
     def __iter__(self):
         for child in self.children:
             yield self.children[child]
+
+    def leaves(self):
+        if hasattr(self, "children"):
+            for child in self:
+                for gc in child.leaves():
+                    yield gc
+        else:
+            yield self
+
+    def itera(self, reverse=False, skip=False):
+        if hasattr(self, "children"):
+            if reverse and not skip:
+                yield self, True
+            for child in self:
+                for gc, l in child.itera(reverse=reverse):
+                    yield gc, l
+            if not reverse and not skip:
+                yield self, True
+        else:
+            yield self, False
+
+    def commit(self, dest):
+        self.commit_del(dest)
+        self.commit_add(dest)
+
+    def commit_del(self, dest):
+        for (node, dir) in self.itera(skip=True):
+            if node.status != self.S_NONE and  node.new_status() == self.S_NONE:
+                if dir:
+                    os.rmdir(os.path.join(dest, node.relpath()))
+                    print("rmdir {}".format(os.path.join(dest, node.relpath())))
+                else:
+                    os.remove(os.path.join(dest, node.relpath()))
+                    print("rm    {}".format(os.path.join(dest, node.relpath())))
+
+    def commit_add(self, dest):
+        for (node, dir) in self.itera(reverse=True, skip=True):
+            if node.status == self.S_NONE and node.new_status() != self.S_NONE:
+                if dir:
+                    os.mkdir(os.path.join(dest, node.relpath()))
+                    print("mkdir {}".format(os.path.join(dest, node.relpath())))
+                else:
+                    shutil.copy(node.path, os.path.join(dest, node.relpath()))
+                    print("cp    {}".format(os.path.join(dest, node.relpath())))
+
+    def relpath(self):
+        if self.parent == self.root:
+            return self.name
+        else:
+            return "{}/{}".format(self.parent.relpath(), self.name)
 
 class Filenode(Filetree):
     def __init__(self, entry, parent):
@@ -100,6 +165,7 @@ class Filenode(Filetree):
 
     def compare_to(self, other):
         self.status = self.S_NONE
+        self._new_status = self.S_NONE
 
         if not other:
             if self.entry.is_dir():
@@ -118,16 +184,22 @@ class Filenode(Filetree):
         else:
             if not other.entry.is_dir() and other.size() == self.size():
                 self.status = self.S_ALL
+                self._new_status = self.S_ALL
+
         return self.status
 
     def trace(self, indent=0, stop=(3, 0), override=False):
+        bs = ""
+        if self.status != self.new_status():
+            bs = Style.BRIGHT
+
         if self.entry.is_dir():
-            if self.status in stop and not override:
-                print("{} {:<50} <skip>{:20}B".format(self.states[self.status], "  "*indent + self.name, self.size()))
+            if self.new_status() in stop and not override:
+                print("{}{} {:<50} <skip>{:20}B{}".format(bs, self.states[self.new_status()], "  "*indent + self.name, self.size(), Style.NORMAL))
             else:
-                print("{} {:<50}       {:20}B".format(self.states[self.status], "  "*indent + self.name, self.size()))
+                print("{}{} {:<50}       {:20}B{}".format(bs, self.states[self.new_status()], "  "*indent + self.name, self.size(), Style.NORMAL))
                 for child in self:
                     child.trace(indent + 1, stop=stop)
         else:
-            print("{} {:<50}       {:20}B".format(self.states[self.status], "  "*indent + self.name, self.size()))
+            print("{}{} {:<50}       {:20}B{}".format(bs, self.states[self.new_status()], "  "*indent + self.name, self.size(), Style.NORMAL))
         print(Fore.RESET, end="")

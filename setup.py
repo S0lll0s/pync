@@ -25,5 +25,5 @@ setup(
     license="MIT",
     packages=find_packages(exclude=("tests", "tests.*")),
     include_package_data=True,
-    install_requires=["colorize"]
+    install_requires=["colorama"]
 )
